@@ -48,9 +48,8 @@
 ---
 ## Интерфейс
 
-![первый экран](ui/homeUI.png)
-![второй экран](ui/importUI.png)
-![третий экран](ui/queryUI.png)
+![Импорт](ui/importUI.png)
+![Таблица](ui/queryUI.png)
 ---
 
 ## Для кого
