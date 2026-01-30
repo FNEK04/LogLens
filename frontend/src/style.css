@@ -1,0 +1,169 @@
+/* Global styles */
+:root {
+  --primary-color: #18a058;
+  --success-color: #28a745;
+  --warning-color: #ffc107;
+  --error-color: #dc3545;
+  --info-color: #17a2b8;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: #101014;
+  color: #ffffff;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Card hover effects */
+.n-card {
+  transition: all 0.3s ease;
+}
+
+.n-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* Button improvements */
+.n-button {
+  transition: all 0.2s ease;
+}
+
+.n-button:hover {
+  transform: translateY(-1px);
+}
+
+/* Grid improvements */
+.n-grid {
+  margin-top: 16px;
+}
+
+.n-gi {
+  min-height: 200px;
+}
+
+/* Menu improvements */
+.n-menu {
+  border-right: none;
+}
+
+.n-menu-item {
+  margin: 4px 8px;
+  border-radius: 8px;
+}
+
+.n-menu-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.n-menu-item.n-menu-item--selected {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+/* Header improvements */
+.n-layout-header {
+  backdrop-filter: blur(10px);
+  background-color: rgba(16, 16, 20, 0.8) !important;
+}
+
+/* Content improvements */
+.n-layout-content {
+  background-color: #101014;
+}
+
+/* Form improvements */
+.n-form-item {
+  margin-bottom: 16px;
+}
+
+.n-input, .n-select, .n-input-number {
+  transition: all 0.2s ease;
+}
+
+.n-input:hover, .n-select:hover, .n-input-number:hover {
+  border-color: var(--primary-color);
+}
+
+/* Table improvements */
+.n-data-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Statistic improvements */
+.n-statistic {
+  text-align: center;
+}
+
+.n-statistic .n-statistic-value {
+  font-weight: 600;
+}
+
+/* Alert improvements */
+.n-alert {
+  border-radius: 8px;
+}
+
+/* Progress improvements */
+.n-progress {
+  border-radius: 4px;
+}
+
+/* Upload improvements */
+.n-upload-dragger {
+  border-radius: 8px;
+  transition: all 0.3s ease;
+}
+
+.n-upload-dragger:hover {
+  border-color: var(--primary-color);
+  background-color: rgba(24, 160, 88, 0.05);
+}
+
+/* Steps improvements */
+.n-steps {
+  margin-bottom: 24px;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+  .n-layout-header {
+    padding: 0 16px !important;
+  }
+  
+  .n-layout-content {
+    padding: 16px !important;
+  }
+  
+  .n-grid {
+    grid-template-columns: 1fr;
+  }
+}
