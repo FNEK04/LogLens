@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -51,6 +53,11 @@ func NewLogLens(config Config) (*LogLens, error) {
 }
 
 func (ll *LogLens) ImportFile(ctx context.Context, filePath string, parserConfig domain.ParserConfig, reporter domain.ProgressReporter) (*domain.ImportResult, error) {
+	if parserConfig.IDPrefix == "" {
+		h := sha256.Sum256([]byte(fmt.Sprintf("%s-%d", filePath, time.Now().UnixNano())))
+		parserConfig.IDPrefix = hex.EncodeToString(h[:8])
+	}
+
 	parser, err := ll.parserFactory.CreateParser(parserConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create parser: %w", err)
@@ -120,24 +127,26 @@ func (ll *LogLens) AutoImportFile(ctx context.Context, filePath string, reporter
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
-	
+
 	buffer := make([]byte, 1024)
 	n, err := file.Read(buffer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file sample: %w", err)
 	}
-	
+
 	sample := string(buffer[:n])
-	
+
 	parserType, err := ll.parserFactory.AutoDetectParser(sample)
 	if err != nil {
 		return nil, fmt.Errorf("failed to auto-detect parser: %w", err)
 	}
-	
+
+	h := sha256.Sum256([]byte(filePath))
 	parserConfig := domain.ParserConfig{
-		Type: parserType,
+		Type:     parserType,
+		IDPrefix: hex.EncodeToString(h[:8]),
 	}
-	
+
 	return ll.ImportFile(ctx, filePath, parserConfig, reporter)
 }
 
@@ -174,40 +183,21 @@ func (ll *LogLens) Close() error {
 }
 
 func (ll *LogLens) GetStats(ctx context.Context) (*Stats, error) {
-	totalQuery := domain.Query{
-		Limit: 0,
-	}
-	
-	result, err := ll.storage.Query(ctx, totalQuery)
+	total, err := ll.storage.GetTotalCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get total count: %w", err)
 	}
-	
-	stats := &Stats{
-		TotalRecords: result.Total,
+
+	levelCounts, err := ll.storage.GetLevelCounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get level counts: %w", err)
+	}
+
+	return &Stats{
+		TotalRecords: total,
 		LastUpdated:  time.Now().UnixMilli(),
-		LevelCounts:  make(map[string]int64),
-	}
-	
-	levelQuery := domain.Query{
-		Filters: []domain.FilterCondition{
-			{
-				Type:  domain.FilterExclusion,
-				Field: "level",
-				Value: "",
-			},
-		},
-		Limit: 0,
-	}
-	
-	levelResult, err := ll.storage.Query(ctx, levelQuery)
-	if err == nil {
-		for _, record := range levelResult.Records {
-			stats.LevelCounts[record.Level]++
-		}
-	}
-	
-	return stats, nil
+		LevelCounts:  levelCounts,
+	}, nil
 }
 
 type Stats struct {

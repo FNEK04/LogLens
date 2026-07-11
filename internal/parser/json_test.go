@@ -112,8 +112,8 @@ func TestJSONParser_GeneratedID(t *testing.T) {
 		t.Fatalf("expected 1 record, got %d", len(results))
 	}
 
-	if results[0].ID != "json_1" {
-		t.Errorf("expected ID 'json_1', got %s", results[0].ID)
+	if results[0].ID != "j_json_1" {
+		t.Errorf("expected ID 'j_json_1', got %s", results[0].ID)
 	}
 }
 

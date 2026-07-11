@@ -232,8 +232,7 @@ const parserConfig = ref({
 const parserTypeOptions = [
   { label: 'Plain Text', value: 'plain' },
   { label: 'JSON/NDJSON', value: 'json' },
-  { label: 'Regex', value: 'regex' },
-  { label: 'Grok', value: 'grok' }
+  { label: 'Regex', value: 'regex' }
 ]
 
 const isParserConfigValid = computed(() => {

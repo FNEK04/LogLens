@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"LogLens/internal/domain"
 )
@@ -40,7 +41,6 @@ func (f *ParserFactory) GetSupportedTypes() []domain.ParserType {
 		domain.ParserPlain,
 		domain.ParserJSON,
 		domain.ParserRegex,
-		domain.ParserGrok,
 	}
 }
 
@@ -57,7 +57,14 @@ func (f *ParserFactory) AutoDetectParser(sample string) (domain.ParserType, erro
 }
 
 func (f *ParserFactory) isJSON(sample string) bool {
-	return json.Valid([]byte(sample))
+	if json.Valid([]byte(sample)) {
+		return true
+	}
+	// For NDJSON: check if first line is valid JSON
+	if i := strings.IndexByte(sample, '\n'); i > 0 {
+		return json.Valid([]byte(strings.TrimSpace(sample[:i])))
+	}
+	return false
 }
 
 func (f *ParserFactory) isStructuredLog(sample string) bool {

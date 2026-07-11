@@ -109,8 +109,12 @@ func (p *PlainParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Log
 }
 
 func (p *PlainParser) parseLine(line string, lineNum int) (*domain.LogRecord, error) {
+	idPrefix := p.config.IDPrefix
+	if idPrefix == "" {
+		idPrefix = "p"
+	}
 	record := &domain.LogRecord{
-		ID:      fmt.Sprintf("line_%d", lineNum),
+		ID:      fmt.Sprintf("%s_line_%d", idPrefix, lineNum),
 		Raw:     line,
 		Fields:  make(map[string]interface{}),
 	}

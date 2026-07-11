@@ -22,43 +22,20 @@ func (e *QueryEngine) Execute(ctx context.Context, query domain.Query) (*domain.
 	if err := e.validateQuery(query); err != nil {
 		return nil, fmt.Errorf("invalid query: %w", err)
 	}
-	
+
 	result, err := e.storage.Query(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
-	
-	var regexpFilters []domain.FilterCondition
-	for _, f := range query.Filters {
-		if f.Type == domain.FilterRegexp {
-			regexpFilters = append(regexpFilters, f)
-		}
-	}
-	
-	if len(regexpFilters) > 0 {
-		filterEngine := NewFilterEngine()
-		filter, err := filterEngine.BuildFilter(regexpFilters)
-		if err == nil {
-			inCh := make(chan domain.LogRecord, len(result.Records))
-			for _, r := range result.Records {
-				inCh <- r
-			}
-			close(inCh)
-			outCh := filterEngine.ApplyFilter(filter, inCh)
-			filtered := make([]domain.LogRecord, 0)
-			for r := range outCh {
-				filtered = append(filtered, r)
-			}
-			result.Records = filtered
-			result.Total = int64(len(filtered))
-		}
-	}
-	
+
 	if len(query.Aggregations) > 0 {
-		aggregations := e.computeAggregations(query.Aggregations, result.Records)
+		aggregations, err := e.storage.Aggregate(ctx, query.Filters, query.Aggregations)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute aggregations: %w", err)
+		}
 		result.Aggregations = aggregations
 	}
-	
+
 	return result, nil
 }
 
@@ -158,125 +135,4 @@ func (e *QueryEngine) validateQuery(query domain.Query) error {
 	}
 	
 	return nil
-}
-
-func getRecordFieldValue(field string, record domain.LogRecord) interface{} {
-	switch field {
-	case "level":
-		return record.Level
-	case "service":
-		return record.Service
-	case "message":
-		return record.Message
-	default:
-		if fieldValue, exists := record.Fields[field]; exists {
-			return fieldValue
-		}
-		return nil
-	}
-}
-
-func (e *QueryEngine) computeAggregations(aggregations []domain.Aggregation, records []domain.LogRecord) map[string]interface{} {
-	results := make(map[string]interface{})
-	
-	for _, agg := range aggregations {
-		alias := agg.Alias
-		if alias == "" {
-			alias = agg.Function
-			if agg.Field != "" {
-				alias += "_" + agg.Field
-			}
-		}
-		
-		switch agg.Function {
-		case "count":
-			if agg.Field == "" || agg.Field == "*" {
-				results[alias] = len(records)
-			} else {
-				results[alias] = e.countDistinct(records, agg.Field)
-			}
-		case "avg":
-			results[alias] = e.computeAverage(records, agg.Field)
-		case "sum":
-			results[alias] = e.computeSum(records, agg.Field)
-		case "min":
-			results[alias] = e.computeMin(records, agg.Field)
-		case "max":
-			results[alias] = e.computeMax(records, agg.Field)
-		}
-	}
-	
-	return results
-}
-
-func (e *QueryEngine) countDistinct(records []domain.LogRecord, field string) int {
-	seen := make(map[interface{}]bool)
-	
-	for _, record := range records {
-		if value := getRecordFieldValue(field, record); value != nil {
-			seen[value] = true
-		}
-	}
-	
-	return len(seen)
-}
-
-func (e *QueryEngine) computeAverage(records []domain.LogRecord, field string) float64 {
-	var sum float64
-	var count int
-	
-	for _, record := range records {
-		if numValue, ok := toFloat64(getRecordFieldValue(field, record)); ok {
-			sum += numValue
-			count++
-		}
-	}
-	
-	if count == 0 {
-		return 0
-	}
-	
-	return sum / float64(count)
-}
-
-func (e *QueryEngine) computeSum(records []domain.LogRecord, field string) float64 {
-	var sum float64
-	
-	for _, record := range records {
-		if numValue, ok := toFloat64(getRecordFieldValue(field, record)); ok {
-			sum += numValue
-		}
-	}
-	
-	return sum
-}
-
-func (e *QueryEngine) computeMin(records []domain.LogRecord, field string) interface{} {
-	var min interface{}
-	
-	for i, record := range records {
-		value := getRecordFieldValue(field, record)
-		if value != nil {
-			if i == 0 || compareValues(value, min) < 0 {
-				min = value
-			}
-		}
-	}
-	
-	return min
-}
-
-func (e *QueryEngine) computeMax(records []domain.LogRecord, field string) interface{} {
-	var max interface{}
-	
-	for i, record := range records {
-		value := getRecordFieldValue(field, record)
-		if value != nil {
-			if i == 0 || compareValues(value, max) > 0 {
-				max = value
-			}
-		}
-	}
-	
-	return max
 }

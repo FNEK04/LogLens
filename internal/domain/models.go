@@ -105,6 +105,7 @@ type ParserConfig struct {
 	Pattern  string             `json:"pattern,omitempty"`
 	Fields   map[string]string  `json:"fields,omitempty"`
 	TimeFormat string            `json:"timeFormat,omitempty"`
+	IDPrefix string             `json:"idPrefix,omitempty"`
 }
 
 type IndexType string

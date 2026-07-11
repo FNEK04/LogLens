@@ -106,8 +106,12 @@ func (p *JSONParser) generateID(jsonData map[string]interface{}, lineNum int) st
 			return idStr
 		}
 	}
-	
-	return fmt.Sprintf("json_%d", lineNum)
+
+	idPrefix := p.config.IDPrefix
+	if idPrefix == "" {
+		idPrefix = "j"
+	}
+	return fmt.Sprintf("%s_json_%d", idPrefix, lineNum)
 }
 
 func (p *JSONParser) extractTimestamp(jsonData map[string]interface{}) *time.Time {

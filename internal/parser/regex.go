@@ -89,7 +89,7 @@ func (p *RegexParser) parseLine(line string, lineNum int) (*domain.LogRecord, er
 	}
 	
 	record := &domain.LogRecord{
-		ID:     fmt.Sprintf("regex_%d", lineNum),
+		ID:     fmt.Sprintf("%s_regex_%d", p.config.IDPrefix, lineNum),
 		Raw:    line,
 		Fields: make(map[string]interface{}),
 	}

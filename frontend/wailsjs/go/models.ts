@@ -2,7 +2,7 @@ export namespace app {
 	
 	export class Stats {
 	    totalRecords: number;
-	    levelCounts: Record<string, number>;
+	    levelCounts: {[key: string]: number};
 	    lastUpdated: number;
 	
 	    static createFrom(source: any = {}) {
@@ -79,7 +79,7 @@ export namespace domain {
 	    level: string;
 	    message: string;
 	    service?: string;
-	    fields?: Record<string, any>;
+	    fields?: {[key: string]: any};
 	    raw: string;
 	
 	    static createFrom(source: any = {}) {
@@ -100,7 +100,7 @@ export namespace domain {
 	export class ParserConfig {
 	    type: string;
 	    pattern?: string;
-	    fields?: Record<string, string>;
+	    fields?: {[key: string]: string};
 	    timeFormat?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -159,7 +159,7 @@ export namespace domain {
 	}
 	export class QueryResult {
 	    records: LogRecord[];
-	    aggregations?: Record<string, any>;
+	    aggregations?: {[key: string]: any};
 	    total: number;
 	    took: number;
 	

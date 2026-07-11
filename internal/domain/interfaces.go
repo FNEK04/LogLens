@@ -14,12 +14,9 @@ type Storage interface {
 	Store(ctx context.Context, records <-chan LogRecord) (*ImportResult, error)
 	Query(ctx context.Context, query Query) (*QueryResult, error)
 	GetRecord(ctx context.Context, id string) (*LogRecord, error)
-	Close() error
-}
-
-type Index interface {
-	Index(records <-chan LogRecord) error
-	Search(query Query) ([]string, error)
+	GetTotalCount(ctx context.Context) (int64, error)
+	GetLevelCounts(ctx context.Context) (map[string]int64, error)
+	Aggregate(ctx context.Context, filters []FilterCondition, aggs []Aggregation) (map[string]interface{}, error)
 	Close() error
 }
 
@@ -33,32 +30,7 @@ type FilterEngine interface {
 	ApplyFilter(filter Filter, records <-chan LogRecord) <-chan LogRecord
 }
 
-type GroupingEngine interface {
-	GroupRecords(records <-chan LogRecord) (<-chan LogGroup, error)
-	SetGroupingConfig(config GroupingConfig)
-}
-
-type GroupingConfig struct {
-	Enabled         bool    `json:"enabled"`
-	NormalizeIDs    bool    `json:"normalizeIds"`
-	NormalizeNumbers bool   `json:"normalizeNumbers"`
-	NormalizeDates   bool   `json:"normalizeDates"`
-	SimilarityThreshold float64 `json:"similarityThreshold,omitempty"`
-}
-
 type ProgressReporter interface {
 	ReportProgress(current, total int64, message string)
 	ReportError(err error)
-}
-
-type FileImporter interface {
-	ImportFile(ctx context.Context, filePath string, parser Parser, reporter ProgressReporter) (*ImportResult, error)
-	SupportedExtensions() []string
-}
-
-type Plugin interface {
-	Name() string
-	Version() string
-	CreateParser(config ParserConfig) (Parser, error)
-	SupportedTypes() []ParserType
 }

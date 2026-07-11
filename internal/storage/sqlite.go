@@ -3,14 +3,23 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"LogLens/internal/domain"
+	sqlite3 "modernc.org/sqlite"
 	_ "modernc.org/sqlite"
+)
+
+var (
+	regexpOnce sync.Once
+	regexpErr  error
 )
 
 type SQLiteStorage struct {
@@ -18,6 +27,10 @@ type SQLiteStorage struct {
 }
 
 func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
+	if err := registerRegexpFunc(); err != nil {
+		return nil, fmt.Errorf("failed to register regexp function: %w", err)
+	}
+
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -325,7 +338,7 @@ func (s *SQLiteStorage) buildFilterClause(filter domain.FilterCondition) (string
 		escaped = strings.ReplaceAll(escaped, "_", "\\_")
 		return fmt.Sprintf("%s LIKE ? ESCAPE '\\'", col), []interface{}{"%" + escaped + "%"}, nil
 	case domain.FilterRegexp:
-		return "", nil, nil
+		return fmt.Sprintf("%s REGEXP ?", col), []interface{}{fmt.Sprintf("%v", filter.Value)}, nil
 	case domain.FilterRange:
 		switch filter.Operator {
 		case "gt":
@@ -408,4 +421,129 @@ func (s *SQLiteStorage) GetRecord(ctx context.Context, id string) (*domain.LogRe
 
 func (s *SQLiteStorage) Close() error {
 	return s.db.Close()
+}
+
+func registerRegexpFunc() error {
+	regexpOnce.Do(func() {
+		regexpErr = sqlite3.RegisterDeterministicScalarFunction("regexp", 2,
+			func(ctx *sqlite3.FunctionContext, args []driver.Value) (driver.Value, error) {
+				if len(args) != 2 {
+					return nil, fmt.Errorf("regexp requires exactly 2 arguments")
+				}
+				pattern, ok := args[0].(string)
+				if !ok {
+					return nil, fmt.Errorf("regexp: first argument must be a string")
+				}
+				text, ok := args[1].(string)
+				if !ok {
+					return nil, fmt.Errorf("regexp: second argument must be a string")
+				}
+				matched, err := regexp.MatchString(pattern, text)
+				if err != nil {
+					return nil, fmt.Errorf("regexp: %w", err)
+				}
+				if matched {
+					return int64(1), nil
+				}
+				return int64(0), nil
+			},
+		)
+	})
+	return regexpErr
+}
+
+func (s *SQLiteStorage) GetTotalCount(ctx context.Context) (int64, error) {
+	var count int64
+	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM records").Scan(&count)
+	return count, err
+}
+
+func (s *SQLiteStorage) GetLevelCounts(ctx context.Context) (map[string]int64, error) {
+	rows, err := s.db.QueryContext(ctx, "SELECT level, COUNT(*) FROM records GROUP BY level")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int64)
+	for rows.Next() {
+		var level string
+		var count int64
+		if err := rows.Scan(&level, &count); err != nil {
+			return nil, err
+		}
+		counts[level] = count
+	}
+	return counts, rows.Err()
+}
+
+func (s *SQLiteStorage) Aggregate(ctx context.Context, filters []domain.FilterCondition, aggs []domain.Aggregation) (map[string]interface{}, error) {
+	var whereClauses []string
+	var args []interface{}
+	for _, filter := range filters {
+		clause, clauseArgs, err := s.buildFilterClause(filter)
+		if err != nil {
+			return nil, err
+		}
+		if clause != "" {
+			whereClauses = append(whereClauses, clause)
+			args = append(args, clauseArgs...)
+		}
+	}
+
+	where := ""
+	if len(whereClauses) > 0 {
+		where = " WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	results := make(map[string]interface{})
+	for _, agg := range aggs {
+		alias := agg.Alias
+		if alias == "" {
+			alias = agg.Function
+			if agg.Field != "" {
+				alias += "_" + agg.Field
+			}
+		}
+
+		field := agg.Field
+		if field == "" || field == "*" {
+			field = "*"
+		} else {
+			col, ok := s.allowedColumn(field)
+			if !ok {
+				return nil, fmt.Errorf("invalid aggregation field: %s", field)
+			}
+			field = col
+		}
+
+		var sqlExpr string
+		switch agg.Function {
+		case "count":
+			if field == "*" {
+				sqlExpr = "COUNT(*)"
+			} else {
+				sqlExpr = "COUNT(DISTINCT " + field + ")"
+			}
+		case "avg":
+			sqlExpr = "AVG(CAST(" + field + " AS REAL))"
+		case "sum":
+			sqlExpr = "SUM(CAST(" + field + " AS REAL))"
+		case "min":
+			sqlExpr = "MIN(" + field + ")"
+		case "max":
+			sqlExpr = "MAX(" + field + ")"
+		default:
+			return nil, fmt.Errorf("unsupported aggregation function: %s", agg.Function)
+		}
+
+		q := "SELECT " + sqlExpr + " FROM records" + where
+		var val interface{}
+		if err := s.db.QueryRowContext(ctx, q, args...).Scan(&val); err != nil {
+			return nil, err
+		}
+		results[alias] = val
+	}
+
+	return results, nil
 }
