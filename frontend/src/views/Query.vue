@@ -3,7 +3,7 @@
     <n-card title="Query Logs" hoverable>
       <template #header-extra>
         <n-space>
-          <n-button @click="showExplaination = !showExplaination" quaternary>
+          <n-button @click="showExplanation = !showExplanation" quaternary>
             <template #icon>
               <n-icon><information-circle-outline /></n-icon>
             </template>
@@ -158,7 +158,7 @@
     </n-card>
 
     <!-- Query Explanation -->
-    <n-card v-if="showExplaination" title="Query Explanation" size="small">
+    <n-card v-if="showExplanation" title="Query Explanation" size="small">
       <n-code :code="queryExplanation" language="sql" show-line-numbers />
     </n-card>
 
@@ -219,6 +219,8 @@
             remote
             striped
             virtual-scroll
+            @update:page="handlePageChange"
+            @update:page-size="handlePageSizeChange"
             @update:sorter="handleSorterChange"
           />
         </div>
@@ -228,7 +230,7 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed, onMounted, h, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, h, watch } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart } from 'echarts/charts'
@@ -269,9 +271,9 @@ use([CanvasRenderer, LineChart, GridComponent, TooltipComponent])
 const message = useMessage()
 
 const querying = ref(false)
-const showExplaination = ref(false)
+const showExplanation = ref(false)
 const queryExplanation = ref('')
-const queryResult = ref<any>(null)
+const queryResult = ref<domain.QueryResult | null>(null)
 
 const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promise<T> => {
   let timeoutId: any
@@ -285,7 +287,7 @@ const withTimeout = async <T,>(p: Promise<T>, ms: number, label: string): Promis
   }
 }
 
-const timeline = ref<any[]>([])
+const timeline = ref<domain.TimelinePoint[]>([])
 const timelineLoading = ref(false)
 const timelineBucketMs = ref<number>(60_000)
 const bucketOptions = [
@@ -297,8 +299,8 @@ const bucketOptions = [
 
 const timelineOption = computed(() => {
   if (!timeline.value || timeline.value.length === 0) return null
-  const x = timeline.value.map((p: any) => new Date(p.bucketStart).toLocaleString())
-  const y = timeline.value.map((p: any) => p.count)
+  const x = timeline.value.map((p) => new Date(p.bucketStart).toLocaleString())
+  const y = timeline.value.map((p) => p.count)
   return {
     tooltip: { trigger: 'axis' },
     grid: { left: 40, right: 20, top: 20, bottom: 40 },
@@ -308,13 +310,21 @@ const timelineOption = computed(() => {
   }
 })
 
-const query = ref<any>({
-  filters: [] as any[],
+const query = ref({
+  filters: [] as domain.FilterCondition[],
   sortBy: 'timestamp',
   sortDesc: true,
   limit: 100,
   offset: 0
 })
+
+let queryDebounceTimer: ReturnType<typeof setTimeout> | null = null
+const debouncedExecuteQuery = () => {
+  if (queryDebounceTimer) clearTimeout(queryDebounceTimer)
+  queryDebounceTimer = setTimeout(() => {
+    executeQuery()
+  }, 300)
+}
 
 const quick = ref<{ level: string | null; service: string | null; text: string; timePreset: string; timeRange: [number, number] | null }>({
   level: null,
@@ -428,19 +438,6 @@ const pagination = ref({
   itemCount: 0,
   showSizePicker: true,
   pageSizes: [25, 50, 100, 200],
-  onUpdatePage: (page: number) => {
-    pagination.value.page = page
-    query.value.offset = (page - 1) * pagination.value.pageSize
-    query.value.limit = pagination.value.pageSize
-    executeQuery()
-  },
-  onUpdatePageSize: (pageSize: number) => {
-    pagination.value.pageSize = pageSize
-    pagination.value.page = 1
-    query.value.offset = 0
-    query.value.limit = pageSize
-    executeQuery()
-  }
 })
 
 const buildQuickFilters = () => {
@@ -500,11 +497,11 @@ const buildQuickFilters = () => {
   return filters
 }
 
-const getEffectiveQuery = () => {
-  return {
+const getEffectiveQuery = (): domain.Query => {
+  return domain.Query.createFrom({
     ...query.value,
     filters: [...(query.value.filters || []), ...buildQuickFilters()]
-  }
+  })
 }
 
 const applyQuickFilters = () => {
@@ -534,7 +531,7 @@ const loadTimeline = async () => {
     timeline.value = points || []
   } catch (err) {
     console.error('GetTimeline failed:', err)
-    message.error(`Timeline failed: ${err}`)
+    message.error(`Timeline failed: ${err instanceof Error ? err.message : String(err)}`)
   } finally {
     timelineLoading.value = false
   }
@@ -550,7 +547,7 @@ const exportReport = async () => {
     message.success(`Report saved: ${path}`)
   } catch (err) {
     console.error('ExportReport failed:', err)
-    message.error(`Export failed: ${err}`)
+    message.error(`Export failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -585,10 +582,25 @@ const executeQuery = async () => {
     message.success(`Query executed successfully: ${result.total} records`)
   } catch (error) {
     console.error('Query failed:', error)
-    message.error(`Query failed: ${error}`)
+    message.error(`Query failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     querying.value = false
   }
+}
+
+const handlePageChange = (page: number) => {
+  pagination.value.page = page
+  query.value.offset = (page - 1) * pagination.value.pageSize
+  query.value.limit = pagination.value.pageSize
+  executeQuery()
+}
+
+const handlePageSizeChange = (pageSize: number) => {
+  pagination.value.pageSize = pageSize
+  pagination.value.page = 1
+  query.value.offset = 0
+  query.value.limit = pageSize
+  executeQuery()
 }
 
 const handleSorterChange = (sorter: any) => {
@@ -611,7 +623,7 @@ const explainQuery = async () => {
     queryExplanation.value = explanation
   } catch (error) {
     console.error('Explain failed:', error)
-    message.error(`Explain failed: ${error}`)
+    message.error(`Explain failed: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -622,14 +634,19 @@ const formatDuration = (milliseconds: number) => {
   return `${Math.round((seconds / 60) * 100) / 100}m`
 }
 
-// Watch for showExplaination changes
-watch(showExplaination, (newValue) => {
+// Watch for showExplanation changes
+watch(showExplanation, (newValue) => {
   if (newValue) {
     explainQuery()
   }
 })
 
 onMounted(() => {
+  // Only auto-execute if we might have data
   executeQuery()
+})
+
+onUnmounted(() => {
+  if (queryDebounceTimer) clearTimeout(queryDebounceTimer)
 })
 </script>

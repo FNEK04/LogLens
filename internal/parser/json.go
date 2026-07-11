@@ -25,8 +25,8 @@ func (p *JSONParser) Config() domain.ParserConfig {
 	return p.config
 }
 
-func (p *JSONParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Record, error) {
-	records := make(chan domain.Record, 1000)
+func (p *JSONParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.LogRecord, error) {
+	records := make(chan domain.LogRecord, 1000)
 	
 	go func() {
 		defer close(records)
@@ -69,13 +69,13 @@ func (p *JSONParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Reco
 	return records, nil
 }
 
-func (p *JSONParser) parseJSONLine(line string, lineNum int) (*domain.Record, error) {
+func (p *JSONParser) parseJSONLine(line string, lineNum int) (*domain.LogRecord, error) {
 	var jsonData map[string]interface{}
 	if err := json.Unmarshal([]byte(line), &jsonData); err != nil {
 		return nil, fmt.Errorf("invalid JSON: %w", err)
 	}
 	
-	record := &domain.Record{
+	record := &domain.LogRecord{
 		ID:     p.generateID(jsonData, lineNum),
 		Raw:    line,
 		Fields: make(map[string]interface{}),
@@ -140,10 +140,6 @@ func (p *JSONParser) parseTimestamp(value interface{}) (time.Time, error) {
 			if timestamp, err := time.Parse(format, v); err == nil {
 				return timestamp, nil
 			}
-		}
-		
-		if timestamp, err := time.Parse(time.RFC3339, v); err == nil {
-			return timestamp, nil
 		}
 		
 	case float64:

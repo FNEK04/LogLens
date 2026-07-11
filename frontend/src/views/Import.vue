@@ -136,6 +136,10 @@
             :show-indicator="true"
           />
 
+          <n-text v-if="importStatus === 'importing' && importProgressMessage" depth="3">
+            {{ importProgressMessage }}
+          </n-text>
+
           <n-space v-if="importResult">
             <n-statistic label="Total Records" :value="importResult.totalRecords" />
             <n-statistic label="Processed" :value="importResult.processed" />
@@ -193,7 +197,8 @@ import { ArchiveOutline } from '@vicons/ionicons5'
 
 // Import Wails runtime
 import { AutoImportFile, ImportFile, SelectLogFile } from '../../wailsjs/go/main/App'
-import { OnFileDrop, OnFileDropOff } from '../../wailsjs/runtime/runtime'
+import { OnFileDrop, OnFileDropOff, EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
+import { domain } from '../../wailsjs/go/models'
 
 const router = useRouter()
 const message = useMessage()
@@ -215,7 +220,7 @@ const selectedFilePath = ref<string>('')
 const autoDetect = ref(true)
 const importing = ref(false)
 const importProgress = ref(0)
-const importResult = ref<any>(null)
+const importResult = ref<domain.ImportResult | null>(null)
 
 const parserConfig = ref({
   type: '',
@@ -245,7 +250,7 @@ const chooseFile = async () => {
     selectedFilePath.value = path
   } catch (error) {
     console.error('SelectLogFile failed:', error)
-    message.error(`Failed to select file: ${error}`)
+    message.error(`Failed to select file: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -269,17 +274,37 @@ const prevStep = () => {
   }
 }
 
+const importProgressMessage = ref('')
+let offProgress: (() => void) | null = null
+let offError: (() => void) | null = null
+
 const startImport = async () => {
   if (!selectedFilePath.value) return
 
   importing.value = true
   importStatus.value = 'importing'
   importProgress.value = 0
+  importProgressMessage.value = 'Preparing...'
   stepStatus.value = 'process'
+
+  offProgress = EventsOn('import:progress', (data: { current: number; total: number; message: string }) => {
+    importProgressMessage.value = data.message
+    if (data.total > 0) {
+      importProgress.value = Math.min(99, Math.round((data.current / data.total) * 100))
+    } else {
+      importProgress.value = Math.min(99, Math.round(Math.log2(data.current + 1) * 10))
+    }
+  })
+
+  offError = EventsOn('import:error', (data: { error: string }) => {
+    importStatus.value = 'error'
+    stepStatus.value = 'error'
+    message.error(`Import error: ${data.error}`)
+  })
 
   try {
     let result
-    
+
     if (autoDetect.value) {
       result = await AutoImportFile(selectedFilePath.value)
     } else {
@@ -290,15 +315,17 @@ const startImport = async () => {
     importProgress.value = 100
     importStatus.value = 'success'
     stepStatus.value = 'finish'
-    
+
     message.success(`Successfully imported ${result.processed} records`)
   } catch (error) {
     console.error('Import failed:', error)
     importStatus.value = 'error'
     stepStatus.value = 'error'
-    message.error(`Import failed: ${error}`)
+    message.error(`Import failed: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     importing.value = false
+    if (offProgress) { offProgress(); offProgress = null }
+    if (offError) { offError(); offError = null }
   }
 }
 
@@ -315,13 +342,6 @@ const resetImport = () => {
     timeFormat: '',
     fields: {}
   }
-}
-
-const formatFileSize = (bytes: number) => {
-  const sizes = ['Bytes', 'KB', 'MB', 'GB']
-  if (bytes === 0) return '0 Bytes'
-  const i = Math.floor(Math.log(bytes) / Math.log(1024))
-  return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i]
 }
 
 const formatDuration = (nanoseconds: number) => {
@@ -342,5 +362,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   OnFileDropOff()
+  if (offProgress) { offProgress() }
+  if (offError) { offError() }
 })
 </script>

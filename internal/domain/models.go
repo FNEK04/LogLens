@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-type Record struct {
+type LogRecord struct {
 	ID        string                 `json:"id"`
 	Timestamp int64                  `json:"timestamp"`
 	Level     string                 `json:"level"`
@@ -14,15 +14,15 @@ type Record struct {
 	Raw       string                 `json:"raw"`
 }
 
-func (r *Record) SetTimestamp(t time.Time) {
+func (r *LogRecord) SetTimestamp(t time.Time) {
 	if t.IsZero() {
-		r.Timestamp = time.Now().Unix() * 1000
+		r.Timestamp = time.Now().UnixMilli()
 	} else {
-		r.Timestamp = t.Unix() * 1000
+		r.Timestamp = t.UnixMilli()
 	}
 }
 
-func (r *Record) GetTimestamp() time.Time {
+func (r *LogRecord) GetTimestamp() time.Time {
 	if r.Timestamp == 0 {
 		return time.Now()
 	}
@@ -30,7 +30,7 @@ func (r *Record) GetTimestamp() time.Time {
 }
 
 type Filter interface {
-	Match(r Record) bool
+	Match(r LogRecord) bool
 }
 
 type FilterType string
@@ -67,7 +67,7 @@ type Aggregation struct {
 }
 
 type QueryResult struct {
-	Records      []Record               `json:"records"`
+	Records      []LogRecord            `json:"records"`
 	Aggregations map[string]interface{} `json:"aggregations,omitempty"`
 	Total        int64                  `json:"total"`
 	Took         int64                  `json:"took"`
@@ -79,7 +79,7 @@ type LogGroup struct {
 	Count     int    `json:"count"`
 	FirstSeen int64  `json:"firstSeen"`
 	LastSeen  int64  `json:"lastSeen"`
-	Sample    Record `json:"sample"`
+	Sample    LogRecord `json:"sample"`
 	Level     string `json:"level"`
 	Service   string `json:"service,omitempty"`
 }
@@ -138,5 +138,5 @@ type Report struct {
 	Timeline    []TimelinePoint `json:"timeline"`
 	Total       int64          `json:"total"`
 	Took        int64          `json:"took"`
-	Records     []Record       `json:"records"`
+	Records     []LogRecord    `json:"records"`
 }

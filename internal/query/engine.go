@@ -28,6 +28,32 @@ func (e *QueryEngine) Execute(ctx context.Context, query domain.Query) (*domain.
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 	
+	var regexpFilters []domain.FilterCondition
+	for _, f := range query.Filters {
+		if f.Type == domain.FilterRegexp {
+			regexpFilters = append(regexpFilters, f)
+		}
+	}
+	
+	if len(regexpFilters) > 0 {
+		filterEngine := NewFilterEngine()
+		filter, err := filterEngine.BuildFilter(regexpFilters)
+		if err == nil {
+			inCh := make(chan domain.LogRecord, len(result.Records))
+			for _, r := range result.Records {
+				inCh <- r
+			}
+			close(inCh)
+			outCh := filterEngine.ApplyFilter(filter, inCh)
+			filtered := make([]domain.LogRecord, 0)
+			for r := range outCh {
+				filtered = append(filtered, r)
+			}
+			result.Records = filtered
+			result.Total = int64(len(filtered))
+		}
+	}
+	
 	if len(query.Aggregations) > 0 {
 		aggregations := e.computeAggregations(query.Aggregations, result.Records)
 		result.Aggregations = aggregations
@@ -134,7 +160,23 @@ func (e *QueryEngine) validateQuery(query domain.Query) error {
 	return nil
 }
 
-func (e *QueryEngine) computeAggregations(aggregations []domain.Aggregation, records []domain.Record) map[string]interface{} {
+func getRecordFieldValue(field string, record domain.LogRecord) interface{} {
+	switch field {
+	case "level":
+		return record.Level
+	case "service":
+		return record.Service
+	case "message":
+		return record.Message
+	default:
+		if fieldValue, exists := record.Fields[field]; exists {
+			return fieldValue
+		}
+		return nil
+	}
+}
+
+func (e *QueryEngine) computeAggregations(aggregations []domain.Aggregation, records []domain.LogRecord) map[string]interface{} {
 	results := make(map[string]interface{})
 	
 	for _, agg := range aggregations {
@@ -167,26 +209,11 @@ func (e *QueryEngine) computeAggregations(aggregations []domain.Aggregation, rec
 	return results
 }
 
-func (e *QueryEngine) countDistinct(records []domain.Record, field string) int {
+func (e *QueryEngine) countDistinct(records []domain.LogRecord, field string) int {
 	seen := make(map[interface{}]bool)
 	
 	for _, record := range records {
-		var value interface{}
-		
-		switch field {
-		case "level":
-			value = record.Level
-		case "service":
-			value = record.Service
-		case "message":
-			value = record.Message
-		default:
-			if fieldValue, exists := record.Fields[field]; exists {
-				value = fieldValue
-			}
-		}
-		
-		if value != nil {
+		if value := getRecordFieldValue(field, record); value != nil {
 			seen[value] = true
 		}
 	}
@@ -194,27 +221,12 @@ func (e *QueryEngine) countDistinct(records []domain.Record, field string) int {
 	return len(seen)
 }
 
-func (e *QueryEngine) computeAverage(records []domain.Record, field string) float64 {
+func (e *QueryEngine) computeAverage(records []domain.LogRecord, field string) float64 {
 	var sum float64
 	var count int
 	
 	for _, record := range records {
-		var value interface{}
-		
-		switch field {
-		case "level":
-			value = record.Level
-		case "service":
-			value = record.Service
-		case "message":
-			value = record.Message
-		default:
-			if fieldValue, exists := record.Fields[field]; exists {
-				value = fieldValue
-			}
-		}
-		
-		if numValue, ok := e.toFloat64(value); ok {
+		if numValue, ok := toFloat64(getRecordFieldValue(field, record)); ok {
 			sum += numValue
 			count++
 		}
@@ -227,26 +239,11 @@ func (e *QueryEngine) computeAverage(records []domain.Record, field string) floa
 	return sum / float64(count)
 }
 
-func (e *QueryEngine) computeSum(records []domain.Record, field string) float64 {
+func (e *QueryEngine) computeSum(records []domain.LogRecord, field string) float64 {
 	var sum float64
 	
 	for _, record := range records {
-		var value interface{}
-		
-		switch field {
-		case "level":
-			value = record.Level
-		case "service":
-			value = record.Service
-		case "message":
-			value = record.Message
-		default:
-			if fieldValue, exists := record.Fields[field]; exists {
-				value = fieldValue
-			}
-		}
-		
-		if numValue, ok := e.toFloat64(value); ok {
+		if numValue, ok := toFloat64(getRecordFieldValue(field, record)); ok {
 			sum += numValue
 		}
 	}
@@ -254,27 +251,13 @@ func (e *QueryEngine) computeSum(records []domain.Record, field string) float64 
 	return sum
 }
 
-func (e *QueryEngine) computeMin(records []domain.Record, field string) interface{} {
+func (e *QueryEngine) computeMin(records []domain.LogRecord, field string) interface{} {
 	var min interface{}
 	
 	for i, record := range records {
-		var value interface{}
-		
-		switch field {
-		case "level":
-			value = record.Level
-		case "service":
-			value = record.Service
-		case "message":
-			value = record.Message
-		default:
-			if fieldValue, exists := record.Fields[field]; exists {
-				value = fieldValue
-			}
-		}
-		
+		value := getRecordFieldValue(field, record)
 		if value != nil {
-			if i == 0 || e.compare(value, min) < 0 {
+			if i == 0 || compareValues(value, min) < 0 {
 				min = value
 			}
 		}
@@ -283,81 +266,17 @@ func (e *QueryEngine) computeMin(records []domain.Record, field string) interfac
 	return min
 }
 
-func (e *QueryEngine) computeMax(records []domain.Record, field string) interface{} {
+func (e *QueryEngine) computeMax(records []domain.LogRecord, field string) interface{} {
 	var max interface{}
 	
 	for i, record := range records {
-		var value interface{}
-		
-		switch field {
-		case "level":
-			value = record.Level
-		case "service":
-			value = record.Service
-		case "message":
-			value = record.Message
-		default:
-			if fieldValue, exists := record.Fields[field]; exists {
-				value = fieldValue
-			}
-		}
-		
+		value := getRecordFieldValue(field, record)
 		if value != nil {
-			if i == 0 || e.compare(value, max) > 0 {
+			if i == 0 || compareValues(value, max) > 0 {
 				max = value
 			}
 		}
 	}
 	
 	return max
-}
-
-func (e *QueryEngine) toFloat64(value interface{}) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case int32:
-		return float64(v), true
-	default:
-		return 0, false
-	}
-}
-
-func (e *QueryEngine) compare(a, b interface{}) int {
-	if a == nil && b == nil {
-		return 0
-	}
-	if a == nil {
-		return -1
-	}
-	if b == nil {
-		return 1
-	}
-	
-	if aNum, aOk := e.toFloat64(a); aOk {
-		if bNum, bOk := e.toFloat64(b); bOk {
-			if aNum < bNum {
-				return -1
-			} else if aNum > bNum {
-				return 1
-			}
-			return 0
-		}
-	}
-	
-	aStr := fmt.Sprintf("%v", a)
-	bStr := fmt.Sprintf("%v", b)
-	
-	if aStr < bStr {
-		return -1
-	} else if aStr > bStr {
-		return 1
-	}
-	return 0
 }

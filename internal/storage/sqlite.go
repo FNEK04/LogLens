@@ -23,6 +23,9 @@ func NewSQLiteStorage(dbPath string) (*SQLiteStorage, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	
 	storage := &SQLiteStorage{db: db}
 	
 	if err := storage.init(); err != nil {
@@ -82,7 +85,7 @@ func (s *SQLiteStorage) allowedColumn(field string) (string, bool) {
 	}
 }
 
-func (s *SQLiteStorage) Store(ctx context.Context, records <-chan domain.Record) (*domain.ImportResult, error) {
+func (s *SQLiteStorage) Store(ctx context.Context, records <-chan domain.LogRecord) (*domain.ImportResult, error) {
 	startTime := time.Now()
 	result := &domain.ImportResult{}
 	
@@ -96,7 +99,7 @@ func (s *SQLiteStorage) Store(ctx context.Context, records <-chan domain.Record)
 	defer stmt.Close()
 	
 	batchSize := 1000
-	batch := make([]domain.Record, 0, batchSize)
+	batch := make([]domain.LogRecord, 0, batchSize)
 	
 	for record := range records {
 		batch = append(batch, record)
@@ -124,7 +127,7 @@ func (s *SQLiteStorage) Store(ctx context.Context, records <-chan domain.Record)
 	return result, nil
 }
 
-func (s *SQLiteStorage) insertBatch(ctx context.Context, stmt *sql.Stmt, batch []domain.Record) error {
+func (s *SQLiteStorage) insertBatch(ctx context.Context, stmt *sql.Stmt, batch []domain.LogRecord) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -166,9 +169,9 @@ func (s *SQLiteStorage) Query(ctx context.Context, query domain.Query) (*domain.
 	}
 	defer rows.Close()
 	
-	records := make([]domain.Record, 0)
+	records := make([]domain.LogRecord, 0)
 	for rows.Next() {
-		var record domain.Record
+		var record domain.LogRecord
 		var ts int64
 		var fieldsJSON string
 		
@@ -318,9 +321,11 @@ func (s *SQLiteStorage) buildFilterClause(filter domain.FilterCondition) (string
 	case domain.FilterExclusion:
 		return fmt.Sprintf("%s != ?", col), []interface{}{filter.Value}, nil
 	case domain.FilterContains:
-		return fmt.Sprintf("%s LIKE ?", col), []interface{}{"%" + fmt.Sprintf("%v", filter.Value) + "%"}, nil
+		escaped := strings.ReplaceAll(fmt.Sprintf("%v", filter.Value), "%", "\\%")
+		escaped = strings.ReplaceAll(escaped, "_", "\\_")
+		return fmt.Sprintf("%s LIKE ? ESCAPE '\\'", col), []interface{}{"%" + escaped + "%"}, nil
 	case domain.FilterRegexp:
-		return fmt.Sprintf("%s REGEXP ?", col), []interface{}{filter.Value}, nil
+		return "", nil, nil
 	case domain.FilterRange:
 		switch filter.Operator {
 		case "gt":
@@ -364,13 +369,13 @@ func (s *SQLiteStorage) getTotalCount(ctx context.Context, query domain.Query) (
 	return count, err
 }
 
-func (s *SQLiteStorage) GetRecord(ctx context.Context, id string) (*domain.Record, error) {
+func (s *SQLiteStorage) GetRecord(ctx context.Context, id string) (*domain.LogRecord, error) {
 	query := `
 		SELECT id, timestamp, level, message, service, fields, raw
 		FROM records WHERE id = ?
 	`
 	
-	var record domain.Record
+	var record domain.LogRecord
 	var ts int64
 	var fieldsJSON string
 	

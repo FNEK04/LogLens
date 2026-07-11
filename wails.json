@@ -9,5 +9,12 @@
   "author": {
     "name": "FNEK04",
     "email": "0fanzer@gmail.com"
+  },
+  "info": {
+    "CompanyName": "FNEK04",
+    "ProductVersion": "1.0.0",
+    "ProductName": "LogLens",
+    "Copyright": "Copyright 2024 FNEK04",
+    "Comments": "Desktop application for local log analysis"
   }
 }

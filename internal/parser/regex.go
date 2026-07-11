@@ -38,8 +38,8 @@ func (p *RegexParser) Config() domain.ParserConfig {
 	return p.config
 }
 
-func (p *RegexParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Record, error) {
-	records := make(chan domain.Record, 1000)
+func (p *RegexParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.LogRecord, error) {
+	records := make(chan domain.LogRecord, 1000)
 	
 	go func() {
 		defer close(records)
@@ -82,13 +82,13 @@ func (p *RegexParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Rec
 	return records, nil
 }
 
-func (p *RegexParser) parseLine(line string, lineNum int) (*domain.Record, error) {
+func (p *RegexParser) parseLine(line string, lineNum int) (*domain.LogRecord, error) {
 	matches := p.regex.FindStringSubmatch(line)
 	if matches == nil {
 		return nil, fmt.Errorf("line doesn't match regex pattern")
 	}
 	
-	record := &domain.Record{
+	record := &domain.LogRecord{
 		ID:     fmt.Sprintf("regex_%d", lineNum),
 		Raw:    line,
 		Fields: make(map[string]interface{}),

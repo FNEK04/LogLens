@@ -6,19 +6,19 @@ import (
 )
 
 type Parser interface {
-	Parse(ctx context.Context, r io.Reader) (<-chan Record, error)
+	Parse(ctx context.Context, r io.Reader) (<-chan LogRecord, error)
 	Config() ParserConfig
 }
 
 type Storage interface {
-	Store(ctx context.Context, records <-chan Record) (*ImportResult, error)
+	Store(ctx context.Context, records <-chan LogRecord) (*ImportResult, error)
 	Query(ctx context.Context, query Query) (*QueryResult, error)
-	GetRecord(ctx context.Context, id string) (*Record, error)
+	GetRecord(ctx context.Context, id string) (*LogRecord, error)
 	Close() error
 }
 
 type Index interface {
-	Index(records <-chan Record) error
+	Index(records <-chan LogRecord) error
 	Search(query Query) ([]string, error)
 	Close() error
 }
@@ -30,11 +30,11 @@ type QueryEngine interface {
 
 type FilterEngine interface {
 	BuildFilter(conditions []FilterCondition) (Filter, error)
-	ApplyFilter(filter Filter, records <-chan Record) <-chan Record
+	ApplyFilter(filter Filter, records <-chan LogRecord) <-chan LogRecord
 }
 
 type GroupingEngine interface {
-	GroupRecords(records <-chan Record) (<-chan LogGroup, error)
+	GroupRecords(records <-chan LogRecord) (<-chan LogGroup, error)
 	SetGroupingConfig(config GroupingConfig)
 }
 

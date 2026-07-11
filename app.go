@@ -52,7 +52,10 @@ func (a *App) getDatabasePath() string {
 	}
 	
 	loglensDir := filepath.Join(homeDir, ".loglens")
-	os.MkdirAll(loglensDir, 0755)
+	if err := os.MkdirAll(loglensDir, 0755); err != nil {
+		fmt.Printf("Warning: failed to create directory %s: %v\n", loglensDir, err)
+		return filepath.Join(".", "loglens.db")
+	}
 	
 	return filepath.Join(loglensDir, "loglens.db")
 }
@@ -138,16 +141,16 @@ func (a *App) ImportFile(filePath string, parserConfig domain.ParserConfig) (*do
 	if a.loglens == nil {
 		return nil, fmt.Errorf("LogLens not initialized")
 	}
-	
-	return a.loglens.ImportFile(a.ctx, filePath, parserConfig, &defaultProgressReporter{})
+	reporter := &wailsProgressReporter{ctx: a.ctx}
+	return a.loglens.ImportFile(a.ctx, filePath, parserConfig, reporter)
 }
 
 func (a *App) AutoImportFile(filePath string) (*domain.ImportResult, error) {
 	if a.loglens == nil {
 		return nil, fmt.Errorf("LogLens not initialized")
 	}
-	
-	return a.loglens.AutoImportFile(a.ctx, filePath, &defaultProgressReporter{})
+	reporter := &wailsProgressReporter{ctx: a.ctx}
+	return a.loglens.AutoImportFile(a.ctx, filePath, reporter)
 }
 
 func (a *App) Query(query domain.Query) (*domain.QueryResult, error) {
@@ -166,7 +169,7 @@ func (a *App) ExplainQuery(query domain.Query) (string, error) {
 	return a.loglens.ExplainQuery(query)
 }
 
-func (a *App) GetRecord(id string) (*domain.Record, error) {
+func (a *App) GetRecord(id string) (*domain.LogRecord, error) {
 	if a.loglens == nil {
 		return nil, fmt.Errorf("LogLens not initialized")
 	}
@@ -190,16 +193,20 @@ func (a *App) GetStats() (*app.Stats, error) {
 	return a.loglens.GetStats(a.ctx)
 }
 
-func (a *App) Greet(name string) string {
-	return fmt.Sprintf("Hello %s, Welcome to LogLens!", name)
+type wailsProgressReporter struct {
+	ctx context.Context
 }
 
-type defaultProgressReporter struct{}
-
-func (r *defaultProgressReporter) ReportProgress(current, total int64, message string) {
-	fmt.Printf("Progress: %d/%d - %s\n", current, total, message)
+func (r *wailsProgressReporter) ReportProgress(current, total int64, message string) {
+	runtime.EventsEmit(r.ctx, "import:progress", map[string]interface{}{
+		"current": current,
+		"total":   total,
+		"message": message,
+	})
 }
 
-func (r *defaultProgressReporter) ReportError(err error) {
-	fmt.Printf("Error: %v\n", err)
+func (r *wailsProgressReporter) ReportError(err error) {
+	runtime.EventsEmit(r.ctx, "import:error", map[string]interface{}{
+		"error": err.Error(),
+	})
 }

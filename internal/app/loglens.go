@@ -55,24 +55,63 @@ func (ll *LogLens) ImportFile(ctx context.Context, filePath string, parserConfig
 	if err != nil {
 		return nil, fmt.Errorf("failed to create parser: %w", err)
 	}
-	
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
-	
+
 	records, err := parser.Parse(ctx, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse file: %w", err)
 	}
-	
-	result, err := ll.storage.Store(ctx, records)
+
+	tracked := ll.trackProgress(ctx, records, reporter)
+
+	result, err := ll.storage.Store(ctx, tracked)
 	if err != nil {
+		reporter.ReportError(err)
 		return nil, fmt.Errorf("failed to store records: %w", err)
 	}
-	
+
+	if reporter != nil {
+		reporter.ReportProgress(result.Processed, result.Processed, "Import complete")
+	}
+
 	return result, nil
+}
+
+func (ll *LogLens) trackProgress(ctx context.Context, in <-chan domain.LogRecord, reporter domain.ProgressReporter) <-chan domain.LogRecord {
+	if reporter == nil {
+		return in
+	}
+	out := make(chan domain.LogRecord, 100)
+	go func() {
+		defer close(out)
+		var count int64
+		const reportInterval = 100
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case record, ok := <-in:
+				if !ok {
+					return
+				}
+				count++
+				if count%reportInterval == 0 {
+					reporter.ReportProgress(count, -1, "Importing...")
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case out <- record:
+				}
+			}
+		}
+	}()
+	return out
 }
 
 func (ll *LogLens) AutoImportFile(ctx context.Context, filePath string, reporter domain.ProgressReporter) (*domain.ImportResult, error) {
@@ -110,7 +149,7 @@ func (ll *LogLens) ExplainQuery(query domain.Query) (string, error) {
 	return ll.queryEngine.Explain(query)
 }
 
-func (ll *LogLens) GetRecord(ctx context.Context, id string) (*domain.Record, error) {
+func (ll *LogLens) GetRecord(ctx context.Context, id string) (*domain.LogRecord, error) {
 	return ll.storage.GetRecord(ctx, id)
 }
 
@@ -150,25 +189,22 @@ func (ll *LogLens) GetStats(ctx context.Context) (*Stats, error) {
 		LevelCounts:  make(map[string]int64),
 	}
 	
-	levelQueries := []string{"ERROR", "WARN", "INFO", "DEBUG"}
-	for _, level := range levelQueries {
-		levelQuery := domain.Query{
-			Filters: []domain.FilterCondition{
-				{
-					Type:  domain.FilterEquality,
-					Field: "level",
-					Value: level,
-				},
+	levelQuery := domain.Query{
+		Filters: []domain.FilterCondition{
+			{
+				Type:  domain.FilterExclusion,
+				Field: "level",
+				Value: "",
 			},
-			Limit: 0,
+		},
+		Limit: 0,
+	}
+	
+	levelResult, err := ll.storage.Query(ctx, levelQuery)
+	if err == nil {
+		for _, record := range levelResult.Records {
+			stats.LevelCounts[record.Level]++
 		}
-		
-		result, err := ll.storage.Query(ctx, levelQuery)
-		if err != nil {
-			continue
-		}
-		
-		stats.LevelCounts[level] = result.Total
 	}
 	
 	return stats, nil

@@ -73,6 +73,30 @@ export namespace domain {
 	        this.duration = source["duration"];
 	    }
 	}
+	export class LogRecord {
+	    id: string;
+	    timestamp: number;
+	    level: string;
+	    message: string;
+	    service?: string;
+	    fields?: Record<string, any>;
+	    raw: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new LogRecord(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.timestamp = source["timestamp"];
+	        this.level = source["level"];
+	        this.message = source["message"];
+	        this.service = source["service"];
+	        this.fields = source["fields"];
+	        this.raw = source["raw"];
+	    }
+	}
 	export class ParserConfig {
 	    type: string;
 	    pattern?: string;
@@ -133,32 +157,8 @@ export namespace domain {
 		    return a;
 		}
 	}
-	export class Record {
-	    id: string;
-	    timestamp: number;
-	    level: string;
-	    message: string;
-	    service?: string;
-	    fields?: Record<string, any>;
-	    raw: string;
-	
-	    static createFrom(source: any = {}) {
-	        return new Record(source);
-	    }
-	
-	    constructor(source: any = {}) {
-	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.id = source["id"];
-	        this.timestamp = source["timestamp"];
-	        this.level = source["level"];
-	        this.message = source["message"];
-	        this.service = source["service"];
-	        this.fields = source["fields"];
-	        this.raw = source["raw"];
-	    }
-	}
 	export class QueryResult {
-	    records: Record[];
+	    records: LogRecord[];
 	    aggregations?: Record<string, any>;
 	    total: number;
 	    took: number;
@@ -169,7 +169,7 @@ export namespace domain {
 	
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
-	        this.records = this.convertValues(source["records"], Record);
+	        this.records = this.convertValues(source["records"], LogRecord);
 	        this.aggregations = source["aggregations"];
 	        this.total = source["total"];
 	        this.took = source["took"];
@@ -193,7 +193,6 @@ export namespace domain {
 		    return a;
 		}
 	}
-	
 	export class TimelinePoint {
 	    bucketStart: number;
 	    count: number;

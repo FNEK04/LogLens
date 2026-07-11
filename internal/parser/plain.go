@@ -13,6 +13,45 @@ import (
 	"LogLens/internal/domain"
 )
 
+var (
+	plainTimestampPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`),
+		regexp.MustCompile(`\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}`),
+		regexp.MustCompile(`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`),
+		regexp.MustCompile(`[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}`),
+	}
+
+	plainTimestampStripPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`),
+		regexp.MustCompile(`\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`),
+		regexp.MustCompile(`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`),
+		regexp.MustCompile(`[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`),
+		regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`),
+	}
+
+	plainLevelStripRe = regexp.MustCompile(`(TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC)`)
+
+	plainServicePatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\[([a-zA-Z0-9_-]+)\]`),
+		regexp.MustCompile(`([a-zA-Z0-9_-]+):`),
+		regexp.MustCompile(`service=([a-zA-Z0-9_-]+)`),
+	}
+
+	plainServiceStripPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`\[[a-zA-Z0-9_-]+\]`),
+		regexp.MustCompile(`[a-zA-Z0-9_-]+:`),
+		regexp.MustCompile(`service=[a-zA-Z0-9_-]+`),
+	}
+
+	plainTimestampFormats = []string{
+		"2006-01-02 15:04:05",
+		"2006/01/02 15:04:05",
+		"01/02/2006 15:04:05",
+		"Jan 02 15:04:05",
+		"2006-01-02T15:04:05",
+	}
+)
+
 type PlainParser struct {
 	config domain.ParserConfig
 }
@@ -25,8 +64,8 @@ func (p *PlainParser) Config() domain.ParserConfig {
 	return p.config
 }
 
-func (p *PlainParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Record, error) {
-	records := make(chan domain.Record, 1000)
+func (p *PlainParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.LogRecord, error) {
+	records := make(chan domain.LogRecord, 1000)
 	
 	go func() {
 		defer close(records)
@@ -69,8 +108,8 @@ func (p *PlainParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Rec
 	return records, nil
 }
 
-func (p *PlainParser) parseLine(line string, lineNum int) (*domain.Record, error) {
-	record := &domain.Record{
+func (p *PlainParser) parseLine(line string, lineNum int) (*domain.LogRecord, error) {
+	record := &domain.LogRecord{
 		ID:      fmt.Sprintf("line_%d", lineNum),
 		Raw:     line,
 		Fields:  make(map[string]interface{}),
@@ -98,30 +137,15 @@ func (p *PlainParser) parseLine(line string, lineNum int) (*domain.Record, error
 }
 
 func (p *PlainParser) extractTimestamp(line string) *time.Time {
-	patterns := []string{
-		`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`,           // 2023-12-25 10:30:45
-		`\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}`,            // 2023/12/25 10:30:45
-		`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}`,            // 12/25/2023 10:30:45
-		`[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}`,          // Dec 25 10:30:45
-	}
-	
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
+	for i, re := range plainTimestampPatterns {
 		match := re.FindString(line)
 		if match != "" {
-			formats := []string{
-				"2006-01-02 15:04:05",
-				"2006/01/02 15:04:05",
-				"01/02/2006 15:04:05",
-				"Jan 02 15:04:05",
-				"2006-01-02T15:04:05",
-			}
-			
-			for _, format := range formats {
+			for _, format := range plainTimestampFormats {
 				if timestamp, err := time.Parse(format, match); err == nil {
 					return &timestamp
 				}
 			}
+			_ = i
 		}
 	}
 	
@@ -142,51 +166,57 @@ func (p *PlainParser) extractLevel(line string) string {
 }
 
 func (p *PlainParser) extractService(line string) string {
-	patterns := []string{
-		`\[([a-zA-Z0-9_-]+)\]`,           // [service-name]
-		`([a-zA-Z0-9_-]+):`,              // service-name:
-		`service=([a-zA-Z0-9_-]+)`,       // service=service-name
+	knownLevels := map[string]bool{
+		"TRACE": true, "DEBUG": true, "INFO": true,
+		"WARN": true, "ERROR": true, "FATAL": true, "PANIC": true,
 	}
-	
-	for _, pattern := range patterns {
-		re := regexp.MustCompile(pattern)
-		matches := re.FindStringSubmatch(line)
-		if len(matches) > 1 {
-			return matches[1]
+
+	searchFrom := 0
+	for searchFrom < len(line) {
+		matched := false
+		for _, re := range plainServicePatterns {
+			remaining := line[searchFrom:]
+			loc := re.FindStringIndex(remaining)
+			if loc == nil {
+				continue
+			}
+			matches := re.FindStringSubmatch(remaining)
+			if len(matches) > 1 {
+				candidate := matches[1]
+				upper := strings.ToUpper(candidate)
+				allDigits := true
+				for _, c := range candidate {
+					if c < '0' || c > '9' {
+						allDigits = false
+						break
+					}
+				}
+				if !knownLevels[upper] && !allDigits {
+					return candidate
+				}
+			}
+			searchFrom += loc[1]
+			matched = true
+			break
+		}
+		if !matched {
+			break
 		}
 	}
-	
+
 	return ""
 }
 
 func (p *PlainParser) extractMessage(line string) string {
 	message := line
 	
-	timestampPatterns := []string{
-		`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`,
-		`\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`,
-		`\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`,
-		`[A-Z][a-z]{2} \d{2} \d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`,
-		`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[\.\d]*[A-Z]*`,
-	}
-	
-	for _, pattern := range timestampPatterns {
-		re := regexp.MustCompile(pattern)
+	for _, re := range plainTimestampStripPatterns {
 		message = re.ReplaceAllString(message, "")
 	}
 	
-	levelPattern := `(TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC)`
-	re := regexp.MustCompile(levelPattern)
-	message = re.ReplaceAllString(message, "")
+	message = plainLevelStripRe.ReplaceAllString(message, "")
 	
-	servicePatterns := []string{
-		`\[[a-zA-Z0-9_-]+\]`,
-		`[a-zA-Z0-9_-]+:`,
-		`service=[a-zA-Z0-9_-]+`,
-	}
-	
-	for _, pattern := range servicePatterns {
-		re := regexp.MustCompile(pattern)
+	for _, re := range plainServiceStripPatterns {
 		message = re.ReplaceAllString(message, "")
 	}
 	

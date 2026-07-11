@@ -22,6 +22,6 @@ func (p *GrokParser) Config() domain.ParserConfig {
 	return p.config
 }
 
-func (p *GrokParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.Record, error) {
+func (p *GrokParser) Parse(ctx context.Context, r io.Reader) (<-chan domain.LogRecord, error) {
 	return nil, fmt.Errorf("grok parser not yet implemented")
 }

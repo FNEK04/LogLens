@@ -8,6 +8,12 @@ import (
 	"LogLens/internal/domain"
 )
 
+var (
+	factoryTimestampRe  = regexp.MustCompile(`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`)
+	factoryLevelRe      = regexp.MustCompile(`\[(TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC)\]`)
+	factoryServiceRe    = regexp.MustCompile(`\[([a-zA-Z0-9_-]+)\]`)
+)
+
 type ParserFactory struct{}
 
 func NewParserFactory() *ParserFactory {
@@ -55,17 +61,14 @@ func (f *ParserFactory) isJSON(sample string) bool {
 }
 
 func (f *ParserFactory) isStructuredLog(sample string) bool {
-	patterns := []string{
-		`\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}`, // timestamp
-		`\[(TRACE|DEBUG|INFO|WARN|ERROR|FATAL|PANIC)\]`, // level in brackets
-		`\[([a-zA-Z0-9_-]+)\]`, // service in brackets
+	if factoryTimestampRe.MatchString(sample) {
+		return true
 	}
-	
-	for _, pattern := range patterns {
-		if regexp.MustCompile(pattern).MatchString(sample) {
-			return true
-		}
+	if factoryLevelRe.MatchString(sample) {
+		return true
 	}
-	
+	if factoryServiceRe.MatchString(sample) {
+		return true
+	}
 	return false
 }

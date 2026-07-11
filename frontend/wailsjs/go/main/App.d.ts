@@ -9,15 +9,13 @@ export function ExplainQuery(arg1:domain.Query):Promise<string>;
 
 export function ExportReport(arg1:domain.Query,arg2:number):Promise<string>;
 
-export function GetRecord(arg1:string):Promise<domain.Record>;
+export function GetRecord(arg1:string):Promise<domain.LogRecord>;
 
 export function GetStats():Promise<app.Stats>;
 
 export function GetSupportedParserTypes():Promise<Array<domain.ParserType>>;
 
 export function GetTimeline(arg1:domain.TimelineRequest):Promise<Array<domain.TimelinePoint>>;
-
-export function Greet(arg1:string):Promise<string>;
 
 export function ImportFile(arg1:string,arg2:domain.ParserConfig):Promise<domain.ImportResult>;
 

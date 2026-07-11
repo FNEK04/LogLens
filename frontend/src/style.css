@@ -91,7 +91,7 @@ body {
 /* Header improvements */
 .n-layout-header {
   backdrop-filter: blur(10px);
-  background-color: rgba(16, 16, 20, 0.8) !important;
+  background-color: rgba(16, 16, 20, 0.8);
 }
 
 /* Content improvements */
