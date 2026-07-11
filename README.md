@@ -50,6 +50,9 @@
 <p align="center">
   <img src="ui/queryUI.png" width="85%" alt="Экран запросов">
 </p>
+<p align="center">
+  <img src="ui/architecture.png" width="85%" alt="Обзор приложения">
+</p>
 
 ---
 
