@@ -102,6 +102,7 @@ export namespace domain {
 	    pattern?: string;
 	    fields?: {[key: string]: string};
 	    timeFormat?: string;
+	    idPrefix?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ParserConfig(source);
@@ -113,6 +114,7 @@ export namespace domain {
 	        this.pattern = source["pattern"];
 	        this.fields = source["fields"];
 	        this.timeFormat = source["timeFormat"];
+	        this.idPrefix = source["idPrefix"];
 	    }
 	}
 	export class Query {
