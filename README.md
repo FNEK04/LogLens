@@ -1,4 +1,7 @@
 <p align="center">
+  <p align="center">
+  <img src="ui/architecture.png" width="85%"">
+  </p>
   <h1 align="center">LogLens</h1>
   <p align="center">Локальный анализатор лог-файлов для desktop</p>
   <p align="center">
@@ -50,9 +53,7 @@
 <p align="center">
   <img src="ui/queryUI.png" width="85%" alt="Экран запросов">
 </p>
-<p align="center">
-  <img src="ui/architecture.png" width="85%" alt="Обзор приложения">
-</p>
+
 
 ---
 
